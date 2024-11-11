@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Studio de Transmissão</title>
+</head>
+<body>
+  <h1>Painel de Controle da Transmissão</h1>
+  <video id="localVideo" autoplay playsinline muted></video>
+  <div>
+    <button id="startBroadcast">Iniciar Transmissão</button>
+    <button id="stopBroadcast">Parar Transmissão</button>
+  </div>
+  <h3>Clientes Conectados: <span id="clientsCount">0</span></h3>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const localVideo = document.getElementById("localVideo");
+    const clientsCountDisplay = document.getElementById("clientsCount");
+    let peerConnections = {};
+
+    // Iniciar transmissão ao clicar
+    document.getElementById("startBroadcast").onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = stream;
+
+      // Configurar conexão WebRTC
+      socket.emit("broadcaster");
+      socket.on("watcher", (id) => {
+        const peerConnection = new RTCPeerConnection();
+        peerConnections[id] = peerConnection;
+
+        stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) socket.emit("candidate", id, event.candidate);
+        };
+
+        peerConnection.createOffer().then((sdp) => {
+          peerConnection.setLocalDescription(sdp);
+          socket.emit("offer", id, sdp);
+        });
+      });
+
+      socket.on("answer", (id, description) => {
+        peerConnections[id].setRemoteDescription(description);
+      });
+
+      socket.on("candidate", (id, candidate) => {
+        peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate));
+      });
+
+      socket.on("clients-update", (count) => {
+        clientsCountDisplay.textContent = count;
+      });
+    };
+
+    // Parar transmissão
+    document.getElementById("stopBroadcast").onclick = () => {
+      localVideo.srcObject.getTracks().forEach(track => track.stop());
+      socket.emit("disconnect");
+    };
+  </script>
+</body>
+</html>

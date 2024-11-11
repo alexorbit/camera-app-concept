@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Visualização da Transmissão</title>
+</head>
+<body>
+  <h1>Transmissão ao Vivo</h1>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const remoteVideo = document.getElementById("remoteVideo");
+    let peerConnection;
+
+    socket.emit("watch");
+
+    socket.on("broadcaster", () => {
+      peerConnection = new RTCPeerConnection();
+      peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("candidate", event.candidate);
+        }
+      };
+
+      socket.on("offer", (id, offer) => {
+        peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        peerConnection.createAnswer().then((answer) => {
+          peerConnection.setLocalDescription(answer);
+          socket.emit("answer", id, answer);
+        });
+      });
+
+      socket.on("candidate", (candidate) => {
+        peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      });
+    });
+
+    socket.on("stop-stream", () => {
+      if (remoteVideo.srcObject) {
+        remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+        remoteVideo.srcObject = null;
+      }
+      if (peerConnection) peerConnection.close();
+    });
+  </script>
+</body>
+</html>
